@@ -57,6 +57,14 @@ from .embedding import get_embeddings
 from ._trim_to_layer import trim_to_layer
 from .ppr import get_ppr
 from ._train_test_split_edges import train_test_split_edges
+from .hetero import group_hetero_graph
+from .negative_sampling import (negative_sampling,
+                                structured_negative_sampling,
+                                batched_negative_sampling)
+from .train_test_split_edges import train_test_split_edges
+from .metric import (accuracy, true_positive, true_negative, false_positive,
+                     false_negative, precision, recall, f1_score,
+                     intersection_and_union, mean_iou)
 
 __all__ = [
     'scatter',
@@ -136,6 +144,7 @@ __all__ = [
     'erdos_renyi_graph',
     'stochastic_blockmodel_graph',
     'barabasi_albert_graph',
+    'group_hetero_graph',
     'negative_sampling',
     'batched_negative_sampling',
     'structured_negative_sampling',

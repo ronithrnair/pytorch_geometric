@@ -35,6 +35,7 @@ from .glem import GLEM
 # Deprecated:
 from torch_geometric.explain.algorithm.captum import (to_captum_input,
                                                       captum_output_to_dicts)
+from .nars import NARS
 
 __all__ = classes = [
     'MLP',
@@ -82,4 +83,5 @@ __all__ = classes = [
     'GITMol',
     'MoleculeGPT',
     'GLEM',
+    'NARS',
 ]

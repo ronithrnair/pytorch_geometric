@@ -40,6 +40,15 @@ class SIGN(BaseTransform):
         edge_index = data.edge_index
         row, col = data.edge_index
         num_nodes = data.num_nodes
+    def __call__(self, data):
+        assert 'edge_index' in data or 'adj_t' in data
+
+        if data.edge_index is not None:
+            row, col = data.edge_index
+            adj_t = SparseTensor(row=col, col=row,
+                                 sparse_sizes=(data.num_nodes, data.num_nodes))
+        else:
+            adj_t = data.adj_t
 
         edge_weight = data.edge_weight
         if edge_weight is None:
