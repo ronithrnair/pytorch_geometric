@@ -57,14 +57,14 @@ __all__ = [
 
 # Serialization ###############################################################
 
-if torch_geometric.typing.WITH_PT24:
-    torch.serialization.add_safe_globals([
-        dict,
-        list,
-        defaultdict,
-        Index,
-        torch_geometric.index.CatMetadata,
-        EdgeIndex,
-        torch_geometric.edge_index.SortOrder,
-        torch_geometric.edge_index.CatMetadata,
-    ])
+# if torch_geometric.typing.WITH_PT24:
+#     torch.serialization.add_safe_globals([
+#         dict,
+#         list,
+#         defaultdict,
+#         Index,
+#         torch_geometric.index.CatMetadata,
+#         EdgeIndex,
+#         torch_geometric.edge_index.SortOrder,
+#         torch_geometric.edge_index.CatMetadata,
+#     ])
