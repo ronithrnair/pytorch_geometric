@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 import torch
-import torch_geometric.typing
+# import torch_geometric.typing
 
 from ._compile import compile, is_compiling
 from ._onnx import is_in_onnx_export
