@@ -17,7 +17,7 @@ def powerset(rels):
 
 
 class NARS(torch.nn.Module):
-    r"""Thei Neighbor Averaging over Relation Subgraphs (NARS) algorithm, which
+    r"""The Neighbor Averaging over Relation Subgraphs (NARS) algorithm, which
     trains a classifier on neighbor-averaged features for randomly-sampled
     subgraphs of relations in a heterogeneous graph
 
@@ -72,16 +72,18 @@ class NARS(torch.nn.Module):
 
         # Convert edge indices to SparseTensor format.
         edge_index_dict = copy.copy(edge_index_dict)
+
+        print(edge_index_dict.items())
         for key, edge_index in edge_index_dict.items():
             if isinstance(edge_index, Tensor):
                 row, col = edge_index
                 src, e_type, dst = key
+                print("Available nodes: ", x_dict.keys())
                 sparse_sizes = (x_dict[dst].size(0), x_dict[src].size(0))
                 adj_t = SparseTensor(row=col, col=row,
                                      sparse_sizes=sparse_sizes)
                 edge_index_dict[key] = adj_t
 
-        # Generate outputs: [num_hops + 1, num_subsets, num_nodes, num_feats]
         out_dict = {}
         for key, item in x_dict.items():
             out_dict[key] = torch.zeros(self.num_hops + 1, len(subsets),
