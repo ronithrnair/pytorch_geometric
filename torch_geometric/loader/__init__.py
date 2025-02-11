@@ -9,6 +9,7 @@ from .hgt_loader import HGTLoader
 from .cluster import ClusterData, ClusterLoader
 from .graph_saint import (GraphSAINTSampler, GraphSAINTNodeSampler,
                           GraphSAINTEdgeSampler, GraphSAINTRandomWalkSampler)
+from .hetero_graph_saint import (HeteroGraphSAINTEdgeSampler, HeteroGraphSAINTNodeSampler, HeteroGraphSAINTRandomWalkSampler, HeteroGraphSAINTSampler)
 from .shadow import ShaDowKHopSampler
 from .random_node_loader import RandomNodeLoader
 # from .ibmb_loader import IBMBBatchLoader, IBMBNodeLoader
@@ -54,6 +55,10 @@ __all__ = classes = [
     'RAGQueryLoader',
     'RAGFeatureStore',
     'RAGGraphStore'
+    'HeteroGraphSAINTSampler',
+    'HeteroGraphSAINTNodeSampler',
+    'HeteroGraphSAINTEdgeSampler',
+    'HeteroGraphSAINTRandomWalkSampler',
 ]
 
 RandomNodeSampler = deprecated(
