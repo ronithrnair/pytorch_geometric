@@ -164,16 +164,19 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         
         return node_map
 
-    def extract_subgraph(self,node_map, src_type, source_nodes,dest_type, dest_nodes, row, column):
-        # Step 1: Convert source_nodes and dest_nodes to sets for fast lookup
+    def extract_subgraph(self,node_map, edge_type, src_type, source_nodes,dest_type, dest_nodes, row, column):
         source_nodes_set = set(source_nodes.tolist())
         dest_nodes_set = set(dest_nodes.tolist())
         new_row = []
         new_col = []
+        self.selected_edges = {edge_type: []
+                          for edge_type in self.edge_types}
+        i = 0
         for i in range(0,len(row)):
             if row[i].item() in source_nodes_set and column[i].item() in dest_nodes_set:
                 new_row.append(node_map[src_type][row[i].item()])
                 new_col.append(node_map[dest_type][column[i].item()])
+                self.selected_edges[edge_type].append(i)
         subgraph = SparseTensor(row=torch.tensor(new_row), col=torch.tensor(new_col), sparse_sizes=(max(new_row) + 1, max(new_col) + 1))
         return subgraph
 
@@ -193,7 +196,7 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
             row, col, value = adj.coo()
             rowptr = adj.storage.rowptr()
 
-            sub_adj = self.extract_subgraph(node_index_map, src_type, src_node_idx, dst_type, dst_node_idx, row, col)
+            sub_adj = self.extract_subgraph(node_index_map, edge_type, src_type, src_node_idx, dst_type, dst_node_idx, row, col)
             adj_dict[edge_type] = sub_adj
 
         return node_idx_dict, adj_dict
@@ -222,9 +225,8 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         if self.sample_coverage > 0:
             for node_type, node_idx in node_idx_dict.items():
                 data[node_type].node_norm = self.node_norm_dict[node_type][node_idx]
-            for edge_type, adj in adj_dict.items():
-                edge_idx = adj.storage.value()
-                data[edge_type].edge_norm = self.edge_norm_dict[edge_type][edge_idx]
+            for edge_type in adj_dict:
+                data[edge_type].edge_norm = self.edge_norm_dict[edge_type][self.selected_edges[edge_type]]
 
         return data
 
@@ -259,7 +261,6 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
             num_samples += self.num_steps
         if self.log:  # pragma: no cover
             pbar.close()
-
         node_norm_dict = {}
         for node_type, node_count in node_count_dict.items():
             node_count[node_count == 0] = 0.1
@@ -272,7 +273,6 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
             edge_norm = (t / edge_count).clamp_(0, 1e4)
             edge_norm[torch.isnan(edge_norm)] = 0.1
             edge_norm_dict[edge_type] = edge_norm
-
         return node_norm_dict, edge_norm_dict
 
 

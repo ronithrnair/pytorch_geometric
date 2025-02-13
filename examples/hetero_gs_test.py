@@ -21,8 +21,9 @@ edge_index = torch.tensor([
 data["user", "buys", "item"].edge_index = edge_index
 
 # Step 2: Instantiate the sampler
-sampler = HeteroGraphSAINTNodeSampler(data, batch_size=2, num_steps=1, sample_coverage=1)
+sampler = HeteroGraphSAINTNodeSampler(data, batch_size=2, num_steps=1, sample_coverage=100)
 
 # Step 3: Run the sampler and print the output
 for batch in sampler:
     print(batch.node_norm_dict)
+    print(batch.edge_norm_dict)
