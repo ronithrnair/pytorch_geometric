@@ -348,7 +348,7 @@ class HeteroGraphSAINTRandomWalkSampler(HeteroGraphSAINTSampler):
                 # If no self-loop edge type exists, sample nodes uniformly
                 # Ensure that node_idx is sampled only from nodes in the train_mask
                 if "train_mask" in self.data[node_type]:
-                    train_mask = torch.cat((self.data[node_type].test_mask.nonzero(as_tuple=True)[0],self.data[node_type].val_mask.nonzero(as_tuple=True)[0]) , dim = 0) # Get indices of train_mask
+                    train_mask = self.data[node_type].train_mask.nonzero(as_tuple=True)[0] # Get indices of train_mask
                     node_idx = train_mask[torch.randint(0, train_mask.size(0), (batch_size,), dtype=torch.long)]
                     # print(node_idx)
                 else :
