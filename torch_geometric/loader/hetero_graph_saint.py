@@ -146,25 +146,6 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
     def _sample_nodes(self, batch_size) -> Dict[str, torch.Tensor]:
         raise NotImplementedError
 
-    # def __getitem__(self, idx) -> Tuple[Dict[str, torch.Tensor], Dict[Tuple[str, str, str], SparseTensor]]:
-    #     node_idx_dict = self._sample_nodes(self._batch_size)
-    #     adj_dict = {}
-    #     for edge_type, adj in self.adj_dict.items():
-    #         src_type, _, dst_type = edge_type
-    #         src_node_idx = node_idx_dict[src_type]
-    #         dst_node_idx = node_idx_dict[dst_type]
-
-    #         # Ensure that the indices are within the valid range
-    #         src_node_idx = src_node_idx[src_node_idx < adj.sparse_size(0)]
-    #         dst_node_idx = dst_node_idx[dst_node_idx < adj.sparse_size(1)]
-
-    #         if src_node_idx.numel() == 0 or dst_node_idx.numel() == 0:
-    #             # Skip if no valid nodes are sampled
-    #             continue
-
-    #         sub_adj, _ = adj.saint_subgraph(src_node_idx, dst_node_idx)
-    #         adj_dict[edge_type] = sub_adj
-    #     return node_idx_dict, adj_dict
     def create_node_index_map(self, node_index_dict):
         """
         Given a dictionary where key is the node type and value is a tensor of nodes, 
@@ -265,18 +246,17 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         while total_sampled_nodes < sum(self.data[node_type].num_nodes for node_type in self.node_types) * self.sample_coverage:
             for data in loader:
                 for node_idx_dict, adj_dict in data:
+                    for node_type, node_idx in node_idx_dict.items() :
+                        node_count_dict[node_type][node_idx] += 1
                     for edge_type, adj in adj_dict.items():
                         edge_idx = adj.storage.value()
                         src_type, _, dst_type = edge_type
-                        node_count_dict[src_type][node_idx_dict[src_type]] += 1
-                        node_count_dict[dst_type][node_idx_dict[dst_type]] += 1
                         edge_count_dict[edge_type][edge_idx] += 1
                         total_sampled_nodes += node_idx_dict[src_type].size(0) + node_idx_dict[dst_type].size(0)
 
                     if self.log:  # pragma: no cover
                         pbar.update(node_idx_dict[src_type].size(0) + node_idx_dict[dst_type].size(0))
             num_samples += self.num_steps
-
         if self.log:  # pragma: no cover
             pbar.close()
 
@@ -284,7 +264,6 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         for node_type, node_count in node_count_dict.items():
             node_count[node_count == 0] = 0.1
             node_norm_dict[node_type] = num_samples / node_count / self.data[node_type].num_nodes
-
         edge_norm_dict = {}
         for edge_type, edge_count in edge_count_dict.items():
             row, _, edge_idx = self.adj_dict[edge_type].coo()
@@ -367,6 +346,12 @@ class HeteroGraphSAINTRandomWalkSampler(HeteroGraphSAINTSampler):
                 node_idx_dict[node_type] = node_idx.view(-1)
             else:
                 # If no self-loop edge type exists, sample nodes uniformly
-                node_idx = torch.randint(0, self.data[node_type].num_nodes, (batch_size,), dtype=torch.long)
+                # Ensure that node_idx is sampled only from nodes in the train_mask
+                if "train_mask" in self.data[node_type]:
+                    train_mask = torch.cat((self.data[node_type].test_mask.nonzero(as_tuple=True)[0],self.data[node_type].val_mask.nonzero(as_tuple=True)[0]) , dim = 0) # Get indices of train_mask
+                    node_idx = train_mask[torch.randint(0, train_mask.size(0), (batch_size,), dtype=torch.long)]
+                    # print(node_idx)
+                else :
+                    node_idx = torch.randint(0, self.data[node_type].num_nodes, (batch_size,), dtype=torch.long)
                 node_idx_dict[node_type] = node_idx
         return node_idx_dict
