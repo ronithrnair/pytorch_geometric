@@ -2,7 +2,7 @@ import os.path as osp
 import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import IMDB
-from torch_geometric.nn import SAGEConv, HeteroConv, Linear
+from torch_geometric.nn import GraphConv, HeteroConv, Linear
 from torch_geometric.loader import HeteroGraphSAINTRandomWalkSampler
 from sklearn.metrics import precision_score, recall_score, f1_score
 from torch.utils.data import DataLoader, TensorDataset
@@ -36,7 +36,7 @@ class SimpleHeteroGNN(torch.nn.Module):
         super().__init__()
 
         self.conv = HeteroConv({
-            (stype, 'to', dtype): SAGEConv(in_channels_dict[stype], out_channels)
+            (stype, 'to', dtype): GraphConv(in_channels_dict[stype], out_channels)
             for stype in in_channels_dict for dtype in in_channels_dict if (stype, 'to', dtype) in metadata[1]
         }, aggr='sum')
 
@@ -50,12 +50,12 @@ class HeteroGNN(torch.nn.Module):
         super().__init__()
 
         self.conv1 = HeteroConv({
-            (stype, 'to', dtype): SAGEConv(in_channels_dict[stype], hidden_channels) # Use in_channels_dict
+            (stype, 'to', dtype): GraphConv(in_channels_dict[stype], hidden_channels) # Use in_channels_dict
             for stype in in_channels_dict for dtype in in_channels_dict if (stype, 'to', dtype) in data.edge_index_dict # Handle missing edge types
         }, aggr='sum')
 
         self.conv2 = HeteroConv({
-            (stype, 'to', dtype): SAGEConv(hidden_channels, out_channels)
+            (stype, 'to', dtype): GraphConv(hidden_channels, out_channels)
             for stype in in_channels_dict for dtype in in_channels_dict if (stype, 'to', dtype) in data.edge_index_dict
         }, aggr='sum')
 
