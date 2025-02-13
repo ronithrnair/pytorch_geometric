@@ -27,7 +27,7 @@ for node_type in in_channels_dict:
         in_channels_dict[node_type] = default_dim
 
 # Extract test mask indices
-test_mask = data['movie'].train_mask.nonzero(as_tuple=True)[0]
+test_mask = data['movie'].test_mask.nonzero(as_tuple=True)[0]
 test_dataset = TensorDataset(test_mask)
 test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False) 
 
