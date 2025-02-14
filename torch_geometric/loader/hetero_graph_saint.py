@@ -91,7 +91,8 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
             :obj:`num_workers`.
     """
     def __init__(self, data: HeteroData, batch_size: int, num_steps: int = 1,
-                 sample_coverage: int = 0, save_dir: Optional[str] = None,
+                 sample_coverage: int = 0, save_dir: Optional[str] = None, 
+                 testing = False, training = False,
                  log: bool = True, **kwargs):
 
         # Remove for PyTorch Lightning:
@@ -106,7 +107,8 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
 
         self.node_types = data.node_types
         self.edge_types = data.edge_types
-
+        self.training = training
+        self.testing = testing
         self.adj_dict: Dict[Tuple[str, str, str], SparseTensor] = {}
         for edge_type in self.edge_types:
             edge_index = data[edge_type].edge_index
@@ -169,8 +171,7 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         dest_nodes_set = set(dest_nodes.tolist())
         new_row = []
         new_col = []
-        self.selected_edges = {edge_type: []
-                          for edge_type in self.edge_types}
+
         i = 0
         for i in range(0,len(row)):
             if row[i].item() in source_nodes_set and column[i].item() in dest_nodes_set:
@@ -218,7 +219,8 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
                     if key in self.node_types and item.size(0) == self.data[key].num_nodes:
                         data[key][k] = item[node_idx_dict[key]]
                     elif key in self.edge_types and item.size(0) == self.data[key].edge_index.size(1):
-                        data[key][k] = item[edge_idx]
+                        # print(self.selected_edges[key])
+                        data[key][k] = item[self.selected_edges[key]]
                 else :
                     data[key][k] = item
 
@@ -325,10 +327,10 @@ class HeteroGraphSAINTRandomWalkSampler(HeteroGraphSAINTSampler):
     """
     def __init__(self, data: HeteroData, batch_size: int, walk_length: int,
                  num_steps: int = 1, sample_coverage: int = 0,
-                 save_dir: Optional[str] = None, log: bool = True, **kwargs):
+                 save_dir: Optional[str] = None, testing = False, training = False, log: bool = True, **kwargs):
         self.walk_length = walk_length
         super().__init__(data, batch_size, num_steps, sample_coverage,
-                         save_dir, log, **kwargs)
+                         save_dir, testing, training, log, **kwargs)
 
     @property
     def _filename(self):
@@ -336,6 +338,8 @@ class HeteroGraphSAINTRandomWalkSampler(HeteroGraphSAINTSampler):
                 f'{self.sample_coverage}.pt')
 
     def _sample_nodes(self, batch_size) -> Dict[str, torch.Tensor]:
+        self.selected_edges = {edge_type: []
+                    for edge_type in self.edge_types}
         node_idx_dict = {}
         for node_type in self.node_types:
             # Check if a self-loop edge type exists for this node type
@@ -345,13 +349,17 @@ class HeteroGraphSAINTRandomWalkSampler(HeteroGraphSAINTSampler):
                 node_idx = self.adj_dict[self_loop_edge_type].random_walk(start.flatten(), self.walk_length)
                 node_idx_dict[node_type] = node_idx.view(-1)
             else:
-                # If no self-loop edge type exists, sample nodes uniformly
-                # Ensure that node_idx is sampled only from nodes in the train_mask
-                if "train_mask" in self.data[node_type]:
-                    train_mask = self.data[node_type].train_mask.nonzero(as_tuple=True)[0] # Get indices of train_mask
+                if self.training and "train_mask" in self.data[node_type]:
+                    train_mask = self.data[node_type].train_mask.nonzero(as_tuple=True)[0]
                     node_idx = train_mask[torch.randint(0, train_mask.size(0), (batch_size,), dtype=torch.long)]
-                    # print(node_idx)
+
+                elif self.testing and "test_mask" in self.data[node_type]:
+                    # test_mask = self.data[node_type].test_mask.nonzero(as_tuple=True)[0]
+                    # node_idx = test_mask[torch.randint(0, test_mask.size(0), (batch_size,), dtype=torch.long)]
+                    node_idx = self.data[node_type].test_mask.nonzero(as_tuple=True)[0]
+
                 else :
                     node_idx = torch.randint(0, self.data[node_type].num_nodes, (batch_size,), dtype=torch.long)
                 node_idx_dict[node_type] = node_idx
+
         return node_idx_dict
