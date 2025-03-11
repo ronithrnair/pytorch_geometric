@@ -1,6 +1,6 @@
 import torch
 from torch_geometric.data import HeteroData
-from torch_geometric.loader import HeteroGraphSAINTNodeSampler
+from torch_geometric.loader import HeteroGraphSAINTNodeSampler, HeteroGraphSAINTEdgeSampler
 
 # Define a small heterogeneous graph
 data = HeteroData()
@@ -21,7 +21,7 @@ edge_index = torch.tensor([
 data["user", "buys", "item"].edge_index = edge_index
 
 # Step 2: Instantiate the sampler
-sampler = HeteroGraphSAINTNodeSampler(data, batch_size=2, num_steps=1, sample_coverage=100)
+sampler = HeteroGraphSAINTNodeSampler(data, batch_size={"user": 2, "item": 1}, num_steps=1, sample_coverage=100)
 
 # Step 3: Run the sampler and print the output
 for batch in sampler:

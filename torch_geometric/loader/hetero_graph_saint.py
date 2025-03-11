@@ -94,10 +94,12 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
                  sample_coverage: int = 0, save_dir: Optional[str] = None, 
                  testing = False, training = False,
                  log: bool = True, **kwargs):
+        
 
         # Remove for PyTorch Lightning:
         kwargs.pop('dataset', None)
         kwargs.pop('collate_fn', None)
+
 
         self.num_steps = num_steps
         self._batch_size = batch_size
@@ -282,12 +284,23 @@ class HeteroGraphSAINTNodeSampler(HeteroGraphSAINTSampler):
     r"""The HeteroGraphSAINT node sampler class (see
     :class:`~torch_geometric.loader.HeteroGraphSAINTSampler`).
     """
-    def _sample_nodes(self, batch_size) -> Dict[str, torch.Tensor]:
+    def _sample_nodes(self, batch_size: Dict[str, int]) -> Dict[str, torch.Tensor]:
+        self.selected_edges = {edge_type: []
+                    for edge_type in self.edge_types}
         node_idx_dict = {}
         for node_type in self.node_types:
-            node_idx = torch.randint(0, self.data[node_type].num_nodes, (batch_size,), dtype=torch.long)
-            node_idx = torch.unique(node_idx)
-            node_idx_dict[node_type] = node_idx
+            node_idx_dict[node_type] = torch.tensor([], dtype=torch.long)
+
+        for edge_type in self.edge_types:
+            src_type, _, dst_type = edge_type
+            if src_type in node_idx_dict:
+                row, col, _ = self.adj_dict[edge_type].coo()
+                node_idx_dict[src_type] = torch.cat([node_idx_dict[src_type], row])
+
+        for node_type in node_idx_dict:
+            if(node_idx_dict[node_type].nelement() != 0):
+                node_idx = torch.randint(0, node_idx_dict[node_type].size(0), (batch_size[node_type],), dtype=torch.long)
+                node_idx_dict[node_type] = torch.unique(node_idx_dict[node_type][node_idx])
         return node_idx_dict
 
 
