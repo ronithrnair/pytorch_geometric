@@ -18,10 +18,16 @@ edge_index = torch.tensor([
     [0, 1,2,3,0,1,2,3,0,1,2,3]   # Item IDs (destination)
 ], dtype=torch.long)
 
-data["user", "buys", "item"].edge_index = edge_index
+edge_index_2 = torch.tensor([
+    [0, 1,2,3,0,1,2,3,0,1,2,3],
+    [0, 0,0,0,1,1,1,1,2,2,2,2],  # User IDs (source)
+     # Item IDs (destination)
+], dtype=torch.long)
 
+data["user", "buys", "item"].edge_index = edge_index
+data["item", "bought_by", "user"].edge_index = edge_index_2
 # Step 2: Instantiate the sampler
-sampler = HeteroGraphSAINTNodeSampler(data, batch_size={"user": 2, "item": 1}, num_steps=1, sample_coverage=100)
+sampler = HeteroGraphSAINTNodeSampler(data, batch_size={"user": 2, "item": 1}, sample_coverage=100)
 
 # Step 3: Run the sampler and print the output
 for batch in sampler:

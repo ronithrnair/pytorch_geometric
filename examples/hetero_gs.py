@@ -88,13 +88,13 @@ optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 train_loader = HeteroGraphSAINTRandomWalkSampler(
     data, batch_size=200, walk_length=20,
     num_steps=1, sample_coverage=10,
-    num_workers=0, save_dir= save_path, testing= True
+    num_workers=0, save_dir= save_path, training = True
 )
 
 test_loader = HeteroGraphSAINTRandomWalkSampler(
     data, batch_size=3000, walk_length=20,
     num_steps=1, sample_coverage=10,
-    num_workers=0, save_dir= save_path, training= True
+    num_workers=0, save_dir= save_path, testing=True
 )
 
 
