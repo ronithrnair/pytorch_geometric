@@ -94,10 +94,12 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
                  sample_coverage: int = 0, save_dir: Optional[str] = None, 
                  testing = False, training = False,
                  log: bool = True, **kwargs):
+        
 
         # Remove for PyTorch Lightning:
         kwargs.pop('dataset', None)
         kwargs.pop('collate_fn', None)
+
 
         self.num_steps = num_steps
         self._batch_size = batch_size
@@ -166,51 +168,43 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         
         return node_map
 
-    def extract_subgraph(self,node_map, edge_type, src_type, source_nodes,dest_type, dest_nodes, row, column):
-        source_nodes_set = set(source_nodes.tolist())
-        dest_nodes_set = set(dest_nodes.tolist())
-        new_row = []
-        new_col = []
+    def extract_subgraph(self, node_map, edge_type, src_type, src_nodes, dst_type, dst_nodes, adj):
+        """Extracts a subgraph efficiently."""
+        src_mask = torch.isin(adj.storage.row(), src_nodes)
+        dst_mask = torch.isin(adj.storage.col(), dst_nodes)
+        edge_mask = src_mask & dst_mask
 
-        i = 0
-        for i in range(0,len(row)):
-            if row[i].item() in source_nodes_set and column[i].item() in dest_nodes_set:
-                new_row.append(node_map[src_type][row[i].item()])
-                new_col.append(node_map[dest_type][column[i].item()])
-                self.selected_edges[edge_type].append(i)
-        subgraph = SparseTensor(row=torch.tensor(new_row), col=torch.tensor(new_col), sparse_sizes=(max(new_row) + 1, max(new_col) + 1))
-        return subgraph
 
-    def __getitem__(self, idx) -> Tuple[Dict[str, torch.Tensor], Dict[Tuple[str, str, str], SparseTensor]]:
+        sub_row = torch.tensor([node_map[src_type][i.item()] for i in adj.storage.row()[edge_mask]], dtype = torch.long)
+        sub_col = torch.tensor([node_map[dst_type][i.item()] for i in adj.storage.col()[edge_mask]], dtype = torch.long)
+
+
+        return SparseTensor(row=sub_row, col=sub_col, sparse_sizes=(sub_row.max() + 1, sub_col.max() + 1)), edge_mask
+
+    def __getitem__(self, idx) -> Tuple[Dict[str, torch.Tensor], Dict[Tuple[str, str, str], SparseTensor], Dict[str, torch.Tensor]]:
         node_idx_dict = self._sample_nodes(self._batch_size)
-        node_index_map = self.create_node_index_map(node_idx_dict)
+        node_map = {ntype: {n.item(): i for i, n in enumerate(nodes)} for ntype, nodes in node_idx_dict.items()}
         adj_dict = {}
+        selected_edges = {edge_type: torch.tensor([], dtype=torch.long)
+                    for edge_type in self.edge_types}
         for edge_type, adj in self.adj_dict.items():
             src_type, _, dst_type = edge_type
-            src_node_idx = node_idx_dict[src_type]
-            dst_node_idx = node_idx_dict[dst_type]
-
-
-            if src_node_idx.numel() == 0 or dst_node_idx.numel() == 0:
+            if src_type not in node_idx_dict or dst_type not in node_idx_dict:
                 continue
 
-            row, col, value = adj.coo()
-            rowptr = adj.storage.rowptr()
+            adj_dict[edge_type], selected_edges[edge_type] = self.extract_subgraph(node_map, edge_type, src_type, node_idx_dict[src_type],
+                                                        dst_type, node_idx_dict[dst_type], adj)
 
-            sub_adj = self.extract_subgraph(node_index_map, edge_type, src_type, src_node_idx, dst_type, dst_node_idx, row, col)
-            adj_dict[edge_type] = sub_adj
-
-        return node_idx_dict, adj_dict
-
+        return node_idx_dict, adj_dict, selected_edges
     def _collate(self, data_list) -> HeteroData:
         assert len(data_list) == 1
-        node_idx_dict, adj_dict = data_list[0]
+        node_idx_dict, adj_dict, selected_edges = data_list[0]
         data = self.data.__class__()
         for node_type, node_idx in node_idx_dict.items():
             data[node_type].num_nodes = node_idx.size(0)
 
         for edge_type, adj in adj_dict.items():
-            row, col, edge_idx = adj.coo()
+            row, col, _ = adj.coo()
             data[edge_type].edge_index = torch.stack([row, col], dim=0)
 
         for key, items in self.data.to_dict().items():
@@ -219,8 +213,7 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
                     if key in self.node_types and item.size(0) == self.data[key].num_nodes:
                         data[key][k] = item[node_idx_dict[key]]
                     elif key in self.edge_types and item.size(0) == self.data[key].edge_index.size(1):
-                        # print(self.selected_edges[key])
-                        data[key][k] = item[self.selected_edges[key]]
+                        data[key][k] = item[selected_edges[key]]
                 else :
                     data[key][k] = item
 
@@ -228,7 +221,7 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
             for node_type, node_idx in node_idx_dict.items():
                 data[node_type].node_norm = self.node_norm_dict[node_type][node_idx]
             for edge_type in adj_dict:
-                data[edge_type].edge_norm = self.edge_norm_dict[edge_type][self.selected_edges[edge_type]]
+                data[edge_type].edge_norm = self.edge_norm_dict[edge_type][selected_edges[edge_type]]
 
         return data
 
@@ -249,17 +242,17 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         num_samples = total_sampled_nodes = 0
         while total_sampled_nodes < sum(self.data[node_type].num_nodes for node_type in self.node_types) * self.sample_coverage:
             for data in loader:
-                for node_idx_dict, adj_dict in data:
+                counter = 0
+                for node_idx_dict, _ , selected_edges in data:
                     for node_type, node_idx in node_idx_dict.items() :
                         node_count_dict[node_type][node_idx] += 1
-                    for edge_type, adj in adj_dict.items():
-                        edge_idx = adj.storage.value()
-                        src_type, _, dst_type = edge_type
-                        edge_count_dict[edge_type][edge_idx] += 1
-                        total_sampled_nodes += node_idx_dict[src_type].size(0) + node_idx_dict[dst_type].size(0)
+                        counter += 1
+                    for edge_type in self.edge_types:
+                        edge_count_dict[edge_type][selected_edges[edge_type]] += 1
 
                     if self.log:  # pragma: no cover
-                        pbar.update(node_idx_dict[src_type].size(0) + node_idx_dict[dst_type].size(0))
+                        pbar.update(counter)
+                    total_sampled_nodes += counter
             num_samples += self.num_steps
         if self.log:  # pragma: no cover
             pbar.close()
@@ -282,12 +275,19 @@ class HeteroGraphSAINTNodeSampler(HeteroGraphSAINTSampler):
     r"""The HeteroGraphSAINT node sampler class (see
     :class:`~torch_geometric.loader.HeteroGraphSAINTSampler`).
     """
-    def _sample_nodes(self, batch_size) -> Dict[str, torch.Tensor]:
-        node_idx_dict = {}
-        for node_type in self.node_types:
-            node_idx = torch.randint(0, self.data[node_type].num_nodes, (batch_size,), dtype=torch.long)
-            node_idx = torch.unique(node_idx)
-            node_idx_dict[node_type] = node_idx
+    def _sample_nodes(self, batch_size: Dict[str, int]) -> Dict[str, torch.Tensor]:
+        node_idx_dict = {node_type : torch.tensor([], dtype=torch.long) for node_type in self.node_types}
+
+        for edge_type in self.edge_types:
+            src_type, _, dst_type = edge_type
+            if src_type in node_idx_dict:
+                row, col, _ = self.adj_dict[edge_type].coo()
+                node_idx_dict[src_type] = torch.cat([node_idx_dict[src_type], row])
+
+        for node_type in node_idx_dict:
+            if(node_idx_dict[node_type].nelement() != 0):
+                node_idx = torch.randint(0, node_idx_dict[node_type].size(0), (batch_size[node_type],), dtype=torch.long)
+                node_idx_dict[node_type] = torch.unique(node_idx_dict[node_type][node_idx])
         return node_idx_dict
 
 

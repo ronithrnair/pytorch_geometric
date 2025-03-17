@@ -13,7 +13,7 @@ path = osp.join(osp.dirname(osp.realpath(__file__)), 'data', 'IMDB')
 save_path = osp.join(osp.dirname(osp.realpath(__file__)), 'processed', 'IMDB')
 
 dataset = IMDB(path)
-data = dataset[0]  # First (and only) graph
+data = dataset[0]  
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -80,23 +80,21 @@ class HeteroGNN(torch.nn.Module):
         #     x_dict = self.conv2(x_dict, edge_index_dict)
         return x_dict
 
-# Initialize model and training components.  Use in_channels_dict!
 model = HeteroGNN(metadata=data.metadata(), in_channels_dict = in_channels_dict, hidden_channels=64, out_channels=3).to(device)
 # model = SimpleHeteroGNN(metadata=data.metadata(), in_channels_dict = in_channels_dict, hidden_channels=64, out_channels=3).to(device)
 print(model)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-# Initialize the HeteroGraphSAINTRandomWalkSampler
 train_loader = HeteroGraphSAINTRandomWalkSampler(
     data, batch_size=200, walk_length=20,
     num_steps=1, sample_coverage=10,
-    num_workers=0, save_dir= save_path, training= True
+    num_workers=0, save_dir= save_path, training = True
 )
 
 test_loader = HeteroGraphSAINTRandomWalkSampler(
     data, batch_size=3000, walk_length=20,
     num_steps=1, sample_coverage=10,
-    num_workers=0, save_dir= save_path, testing= True
+    num_workers=0, save_dir= save_path, testing=True
 )
 
 
@@ -168,7 +166,6 @@ def test():
     return accuracy, precision, recall, f1_macro, f1_micro
 
 
-# Train and evaluate the model
 for epoch in range(1, 100):
     loss = train()
     acc, precision, recall, f1_macro, f1_micro = test()
