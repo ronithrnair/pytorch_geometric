@@ -178,8 +178,8 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         sub_row = torch.tensor([node_map[src_type][i.item()] for i in adj.storage.row()[edge_mask]], dtype = torch.long)
         sub_col = torch.tensor([node_map[dst_type][i.item()] for i in adj.storage.col()[edge_mask]], dtype = torch.long)
 
-
-        return SparseTensor(row=sub_row, col=sub_col, sparse_sizes=(sub_row.max() + 1, sub_col.max() + 1)), edge_mask
+        return SparseTensor(row=sub_row, col=sub_col, sparse_sizes=(next(reversed(node_map[src_type])) + 1,
+                                                                     next(reversed(node_map[dst_type])) + 1)), edge_mask
 
     def __getitem__(self, idx) -> Tuple[Dict[str, torch.Tensor], Dict[Tuple[str, str, str], SparseTensor], Dict[str, torch.Tensor]]:
         node_idx_dict = self._sample_nodes(self._batch_size)
@@ -231,7 +231,7 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         edge_count_dict = {edge_type: torch.zeros(self.data[edge_type].edge_index.size(1), dtype=torch.float)
                           for edge_type in self.edge_types}
 
-        loader = torch.utils.data.DataLoader(self, batch_size=200,
+        loader = torch.utils.data.DataLoader(self, batch_size=1,
                                              collate_fn=lambda x: x,
                                              num_workers=self.num_workers)
 
@@ -277,7 +277,6 @@ class HeteroGraphSAINTNodeSampler(HeteroGraphSAINTSampler):
     """
     def _sample_nodes(self, batch_size: Dict[str, int]) -> Dict[str, torch.Tensor]:
         node_idx_dict = {node_type : torch.tensor([], dtype=torch.long) for node_type in self.node_types}
-
         for edge_type in self.edge_types:
             src_type, _, dst_type = edge_type
             if src_type in node_idx_dict:
