@@ -242,11 +242,11 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         num_samples = total_sampled_nodes = 0
         while total_sampled_nodes < sum(self.data[node_type].num_nodes for node_type in self.node_types) * self.sample_coverage:
             for data in loader:
-                counter = 0
                 for node_idx_dict, _ , selected_edges in data:
+                    counter = 0
                     for node_type, node_idx in node_idx_dict.items() :
                         node_count_dict[node_type][node_idx] += 1
-                        counter += 1
+                        counter += node_idx.shape[0]
                     for edge_type in self.edge_types:
                         edge_count_dict[edge_type][selected_edges[edge_type]] += 1
 
