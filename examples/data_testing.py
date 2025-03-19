@@ -387,28 +387,30 @@ out = model(sample_batch)
 # print(out)
 
 
-# def train():
-#     model.train()
-#     total_loss = 0
-#     i = 0
-#     for batch in train_loader:
-#         print(batch['user'].y.shape)
-#         batch.to(device)     
-#         optimizer.zero_grad()
-#         out = model(batch)
-#         print(out.shape)
+def train():
+    model.train()
+    total_loss = 0
+    i = 0
+    for batch in train_loader:
+        # print(batch['user'].y.shape)
+        batch.to(device)     
+        optimizer.zero_grad()
+        out = model(batch)
+        # print(out.shape)
 
-#         loss = F.cross_entropy(out, batch['user'].y.float(), reduction='none')
-#         loss = (loss * batch['user'].node_norm).sum()
+        loss = F.cross_entropy(out, batch['user'].y.float(), reduction='none')
+        loss = (loss * batch['user'].node_norm).sum()
 
-#         loss.backward()
-#         optimizer.step()
-#         total_loss += loss.item()
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
 
-#         break
+        break
 
-#     return total_loss / len(train_loader)
+    return total_loss / len(train_loader)
 
 
-# if __name__ == "__main__":
-#     train()
+if __name__ == "__main__":
+    for i in range(30):
+        train()
+    print(train_loader.b/train_loader.a)
