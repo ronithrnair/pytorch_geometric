@@ -8,52 +8,6 @@ from torch_geometric.io import fs
 from torch_geometric.typing import SparseTensor
 from torch_geometric.data import HeteroData
 
-def hetero_saint_subgraph(
-    adj_dict: Dict[Tuple[str, str, str], SparseTensor],  # Heterogeneous adjacency dict
-    node_idx_dict: Dict[str, torch.Tensor]  # Sampled node indices per node type
-) -> Dict[Tuple[str, str, str], Tuple[SparseTensor, torch.Tensor]]:
-    """
-    Samples a subgraph from a heterogeneous graph using node indices.
-
-    Args:
-        adj_dict: A dictionary where keys are (source_type, relation, target_type) 
-                  and values are SparseTensors (adjacency matrices).
-        node_idx_dict: A dictionary where keys are node types and values are 
-                       Tensors of sampled node indices.
-
-    Returns:
-        A dictionary with the same keys but sub-sampled adjacency matrices.
-    """
-    subgraph_dict = {}
-
-    for (src_type, rel, dst_type), adj in adj_dict.items():
-        if src_type not in node_idx_dict or dst_type not in node_idx_dict:
-            continue  # Skip relations where we don't have sampled nodes
-
-        src_node_idx = node_idx_dict[src_type]
-        dst_node_idx = node_idx_dict[dst_type]
-
-        # Convert adjacency matrix to COO format
-        row, col, value = adj.coo()
-        rowptr = adj.storage.rowptr()
-
-        # Sampled subgraph using SAINT
-        data = torch.ops.torch_sparse.saint_subgraph(src_node_idx, rowptr, row, col)
-        sampled_row, sampled_col, edge_index = data
-
-        # Update edge values if present
-        if value is not None:
-            value = value[edge_index]
-
-        # Create new SparseTensor for the sampled subgraph
-        sub_adj = SparseTensor(
-            row=sampled_row, col=sampled_col, value=value,
-            sparse_sizes=(src_node_idx.size(0), dst_node_idx.size(0)), is_sorted=True
-        )
-
-        subgraph_dict[(src_type, rel, dst_type)] = (sub_adj, edge_index)
-
-    return subgraph_dict
 
 class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
     r"""The HeteroGraphSAINT sampler base class from the `"HeteroGraphSAINT: Graph
@@ -100,7 +54,8 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         kwargs.pop('dataset', None)
         kwargs.pop('collate_fn', None)
 
-
+        self.a = 0
+        self.b = 0
         self.num_steps = num_steps
         self._batch_size = batch_size
         self.sample_coverage = sample_coverage
@@ -178,6 +133,9 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
         sub_row = torch.tensor([node_map[src_type][i.item()] for i in adj.storage.row()[edge_mask]], dtype = torch.long)
         sub_col = torch.tensor([node_map[dst_type][i.item()] for i in adj.storage.col()[edge_mask]], dtype = torch.long)
 
+        if(sub_row.size(0) == 0 or sub_col.size(0) == 0) :
+            self.b += 1
+        self.a += 1
         return SparseTensor(row=sub_row, col=sub_col, sparse_sizes=(next(reversed(node_map[src_type])) + 1,
                                                                      next(reversed(node_map[dst_type])) + 1)), edge_mask
 
@@ -230,11 +188,13 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
                           for node_type in self.node_types}
         edge_count_dict = {edge_type: torch.zeros(self.data[edge_type].edge_index.size(1), dtype=torch.float)
                           for edge_type in self.edge_types}
-
+        training = self.training
+        testing = self.testing
+        self.training = False
+        self.testing = False
         loader = torch.utils.data.DataLoader(self, batch_size=1,
                                              collate_fn=lambda x: x,
                                              num_workers=self.num_workers)
-
         if self.log:  # pragma: no cover
             pbar = tqdm(total=sum(self.data[node_type].num_nodes for node_type in self.node_types) * self.sample_coverage)
             pbar.set_description('Compute HeteroGraphSAINT normalization')
@@ -268,6 +228,8 @@ class HeteroGraphSAINTSampler(torch.utils.data.DataLoader):
             edge_norm = (t / edge_count).clamp_(0, 1e4)
             edge_norm[torch.isnan(edge_norm)] = 0.1
             edge_norm_dict[edge_type] = edge_norm
+        self.testing = testing
+        self.training = training
         return node_norm_dict, edge_norm_dict
 
 
@@ -285,8 +247,17 @@ class HeteroGraphSAINTNodeSampler(HeteroGraphSAINTSampler):
 
         for node_type in node_idx_dict:
             if(node_idx_dict[node_type].nelement() != 0):
-                node_idx = torch.randint(0, node_idx_dict[node_type].size(0), (batch_size[node_type],), dtype=torch.long)
-                node_idx_dict[node_type] = torch.unique(node_idx_dict[node_type][node_idx])
+                if self.testing and "test_mask" in self.data[node_type]:
+                    node_idx_dict[node_type] = self.data[node_type].test_mask
+                elif self.testing and "test_mask" not in self.data[node_type]:
+                    node_idx_dict[node_type] = torch.unique(node_idx_dict[node_type])
+                elif self.training and "train_mask" in self.data[node_type]: 
+                    node_idx_dict[node_type] = node_idx_dict[node_type][torch.isin(node_idx_dict[node_type], self.data[node_type].train_mask)]
+                    node_idx = torch.randint(0, node_idx_dict[node_type].size(0), (batch_size[node_type],), dtype=torch.long)
+                    node_idx_dict[node_type] = torch.unique(node_idx_dict[node_type][node_idx]) 
+                else :
+                    node_idx = torch.randint(0, node_idx_dict[node_type].size(0), (batch_size[node_type],), dtype=torch.long)
+                    node_idx_dict[node_type] = torch.unique(node_idx_dict[node_type][node_idx])
         return node_idx_dict
 
 
