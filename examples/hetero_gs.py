@@ -3,7 +3,7 @@ import torch
 import torch.nn.functional as F
 from torch_geometric.datasets import IMDB
 from torch_geometric.nn import GraphConv, HeteroConv, Linear
-from torch_geometric.loader import HeteroGraphSAINTRandomWalkSampler
+from torch_geometric.loader import HeteroGraphSAINTNodeSampler
 from sklearn.metrics import precision_score, recall_score, f1_score
 from torch.utils.data import DataLoader, TensorDataset
 from torch_geometric.utils import degree
@@ -14,7 +14,10 @@ save_path = osp.join(osp.dirname(osp.realpath(__file__)), 'processed', 'IMDB')
 
 dataset = IMDB(path)
 data = dataset[0]  
+data['movie'].train_mask = torch.nonzero(data['movie'].train_mask,as_tuple=False).flatten()
+data['movie'].test_mask = torch.nonzero(data['movie'].test_mask,as_tuple=False).flatten()
 
+print(data['movie'].train_mask.shape, data['movie'].test_mask.shape)
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 in_channels_dict = {node_type: data.x_dict[node_type].shape[1] if data.x_dict[node_type] is not None else 0 for node_type in data.x_dict}
@@ -40,7 +43,7 @@ print(data)
 
 test_mask = data['movie'].test_mask.nonzero(as_tuple=True)[0]
 test_dataset = TensorDataset(test_mask)
-test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False) 
+# test_loader = DataLoader(test_dataset, batch_size=1024, shuffle=False) 
 
 class SimpleHeteroGNN(torch.nn.Module):
     def __init__(self, metadata, in_channels_dict, hidden_channels, out_channels):
@@ -85,14 +88,19 @@ model = HeteroGNN(metadata=data.metadata(), in_channels_dict = in_channels_dict,
 print(model)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
 
-train_loader = HeteroGraphSAINTRandomWalkSampler(
-    data, batch_size=200, walk_length=20,
+batch_size = {
+    k : 1000 for k in data.x_dict
+}
+
+batch_size['movie'] = 200
+train_loader = HeteroGraphSAINTNodeSampler(
+    data, batch_size=batch_size,
     num_steps=1, sample_coverage=10,
     num_workers=0, save_dir= save_path, training = True
 )
 
-test_loader = HeteroGraphSAINTRandomWalkSampler(
-    data, batch_size=3000, walk_length=20,
+test_loader = HeteroGraphSAINTNodeSampler(
+    data, batch_size=batch_size,
     num_steps=1, sample_coverage=10,
     num_workers=0, save_dir= save_path, testing=True
 )
@@ -132,13 +140,7 @@ def test():
     all_preds = []
     all_labels = []
 
-    # for batch_idx in test_loader:
-        # batch_idx = batch_idx[0].to(device)  # Move batch index to GPU
-        # batch_x = {k: v.to(device) for k, v in data.x_dict.items()}  # Move features to GPU
-        # batch_edges = {k: v.to(device) for k, v in data.edge_index_dict.items()}  # Move edges to GPU
-        # out = model(batch_x, batch_edges)
-        # pred = out['movie'][batch_idx].argmax(dim=1).cpu().numpy()
-        # labels = data['movie'].y.to(device)[batch_idx].cpu().numpy()  
+ 
 
     for batch in test_loader:
         
@@ -166,10 +168,12 @@ def test():
     return accuracy, precision, recall, f1_macro, f1_micro
 
 
-for epoch in range(1, 100):
+for epoch in range(1, 200):
     loss = train()
     acc, precision, recall, f1_macro, f1_micro = test()
     if epoch%10 == 9 :
         print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Accuracy: {acc:.4f}, '
             f'Precision: {precision:.4f}, Recall: {recall:.4f}, '
             f'F1 (Macro): {f1_macro:.4f}, F1 (Micro): {f1_micro:.4f}')
+
+print(train_loader.b/train_loader.a)
