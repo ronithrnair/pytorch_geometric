@@ -12,7 +12,7 @@ from torch_geometric.loader import (
     HeteroGraphSAINTNodeSampler,
 )
 from torch_geometric.utils import degree
-
+from sklearn.metrics import precision_score, recall_score, f1_score
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Initialize the HeteroData object
@@ -22,14 +22,27 @@ USER_NODES = 1000
 TWEET_NODES = 2000
 LIST_NODES = 1000
 
-save_path = osp.join(osp.dirname(osp.realpath(__file__)), "processed", "IMDB")
+train_ratio = 0.7
+val_ratio = 0.2
+test_ratio = 0.1
+num_nodes = USER_NODES
+
+# Create random permutation of node indices
+perm = torch.randperm(num_nodes)
+
+# Split indices based on the defined ratios
+train_idx = perm[:int(train_ratio * num_nodes)]
+val_idx = perm[int(train_ratio * num_nodes):int((train_ratio + val_ratio) * num_nodes)]
+test_idx = perm[int((train_ratio + val_ratio) * num_nodes):]
 
 # Define the 'user' node type
 data["user"].num_nodes = USER_NODES
 data["user"].num = torch.randn(USER_NODES, 11).float()
 data["user"].cat = torch.randint(0, 10, (USER_NODES, 7)).float()
 data["user"].desc = torch.randn(USER_NODES, 768)
-data["user"].y = torch.randint(0, 2, (USER_NODES, 2))
+data["user"].y = torch.randint(0, 2, (USER_NODES, ))
+data["user"].test_mask = test_idx
+data["user"].train_mask = train_idx
 
 # Define the 'tweet' node type
 data["tweet"].num = torch.randint(0, 10, (TWEET_NODES, 14)).float()
@@ -78,13 +91,21 @@ for edge_type, edge_index in data.edge_index_dict.items():
 
 train_loader = HeteroGraphSAINTNodeSampler(
     data,
-    batch_size={"user": 10, "tweet": 20, "list": 10},
+    training=True,
+    batch_size={"user": 100, "tweet": 200, "list": 100},
     num_steps=1,
-    sample_coverage=1,
+    sample_coverage=10,
     num_workers=0,
 )
 
-sample_batch = next(iter(train_loader))
+test_loader = train_loader = HeteroGraphSAINTNodeSampler(
+    data,
+    testing = True,
+    batch_size={"user": 100, "tweet": 200, "list": 100},
+    num_steps=1,
+    sample_coverage=10,
+    num_workers=0,
+)
 
 
 class BotRGCN(nn.Module):
@@ -379,38 +400,69 @@ class BotRGCN(nn.Module):
         return user_x
 
 
-sample_batch.to(device)
 model = BotRGCN().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-# print(model)
-out = model(sample_batch)
-# print(out)
-
+print(model)
 
 def train():
     model.train()
     total_loss = 0
     i = 0
     for batch in train_loader:
-        # print(batch['user'].y.shape)
         batch.to(device)     
         optimizer.zero_grad()
         out = model(batch)
-        # print(out.shape)
 
-        loss = F.cross_entropy(out, batch['user'].y.float(), reduction='none')
+        loss = F.cross_entropy(out, batch['user'].y, reduction='none')
         loss = (loss * batch['user'].node_norm).sum()
 
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-
         break
 
     return total_loss / len(train_loader)
 
+@torch.no_grad()
+def test():
+    model.eval()
+    all_preds = []
+    all_labels = []
 
-if __name__ == "__main__":
-    for i in range(30):
-        train()
-    print(train_loader.b/train_loader.a)
+ 
+
+    for batch in test_loader:
+        if hasattr(batch, 'edge_weight_dict') and hasattr(batch, 'edge_norm_dict'):
+            for k in batch.edge_weight_dict:
+                batch[k].edge_weight = batch[k].edge_weight * batch[k].edge_norm
+
+        batch.to(device)
+        out = model(batch)
+        pred = out.argmax(dim=1).cpu().numpy()
+        labels = batch['user'].y.squeeze().cpu().numpy()
+
+        all_preds.extend(pred)
+        all_labels.extend(labels)
+
+    if len(all_labels) == 0:
+        return 0  # Prevent division by zero
+
+    accuracy = sum(p == l for p, l in zip(all_preds, all_labels)) / len(all_labels)
+    precision = precision_score(all_labels, all_preds, average='macro', zero_division=0)
+    recall = recall_score(all_labels, all_preds, average='macro', zero_division=0)
+    f1_macro = f1_score(all_labels, all_preds, average='macro', zero_division=0)
+    f1_micro = f1_score(all_labels, all_preds, average='micro', zero_division=0)
+
+    return accuracy, precision, recall, f1_macro, f1_micro
+
+
+
+if __name__ == "__main__" :
+    for epoch in range(1, 200):
+        loss = train()
+        acc, precision, recall, f1_macro, f1_micro = test()
+        if epoch%10 == 9 :
+            print(f'Epoch: {epoch:02d}, Loss: {loss:.4f}, Accuracy: {acc:.4f}, '
+                f'Precision: {precision:.4f}, Recall: {recall:.4f}, '
+                f'F1 (Macro): {f1_macro:.4f}, F1 (Micro): {f1_micro:.4f}')
+
