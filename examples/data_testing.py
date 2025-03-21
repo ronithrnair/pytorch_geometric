@@ -98,7 +98,7 @@ train_loader = HeteroGraphSAINTNodeSampler(
     num_workers=0,
 )
 
-test_loader = train_loader = HeteroGraphSAINTNodeSampler(
+test_loader = HeteroGraphSAINTNodeSampler(
     data,
     testing = True,
     batch_size={"user": 100, "tweet": 200, "list": 100},

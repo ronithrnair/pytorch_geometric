@@ -249,8 +249,6 @@ class HeteroGraphSAINTNodeSampler(HeteroGraphSAINTSampler):
             if(node_idx_dict[node_type].nelement() != 0):
                 if self.testing and "test_mask" in self.data[node_type]:
                     node_idx_dict[node_type] = self.data[node_type].test_mask
-                elif self.testing and "test_mask" not in self.data[node_type]:
-                    node_idx_dict[node_type] = torch.unique(node_idx_dict[node_type])
                 elif self.training and "train_mask" in self.data[node_type]: 
                     node_idx_dict[node_type] = node_idx_dict[node_type][torch.isin(node_idx_dict[node_type], self.data[node_type].train_mask)]
                     node_idx = torch.randint(0, node_idx_dict[node_type].size(0), (batch_size[node_type],), dtype=torch.long)
